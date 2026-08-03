@@ -115,21 +115,27 @@ int OpenMatCommand::run(const QStringList &arguments)
     bool isLocalFile = false;
     QString localFilename;
     for (const QString &urlString : std::as_const(files)) {
+        df = nullptr;
         const QUrl url(urlString);
         const QString scheme = url.scheme();
-        if (scheme.isEmpty()) {
+        if (!scheme.isEmpty()) {
+            if (url.scheme() == "file"_L1) {
+                localFilename = url.toLocalFile();
+                isLocalFile = true;
+            } else {
+                isLocalFile = false;
+            }
+        } else {
+            // No scheme present: treat as a direct filesystem path
             isLocalFile = true;
             localFilename = urlString;
-        } else if (scheme == "file"_L1) {
-            isLocalFile = true;
-            localFilename = QUrl(urlString).toLocalFile();
         }
 
         if (isLocalFile) {
             const QFileInfo f (localFilename);
             if (!f.exists()) {
                 std::cerr << qPrintable(u"Cannot access %1: No such file or directory\n"_s.arg(urlString));
-                break;
+                continue;
             } else {
                 const QMimeType mimeType = mimeDb.mimeTypeForFile(f);
                 df = appsDb.defaultApp(mimeType.name());
@@ -140,7 +146,10 @@ int OpenMatCommand::run(const QStringList &arguments)
         }
 
         if (df) { // default app found
-            if (!df->startDetached(isLocalFile ? localFilename : urlString)) {
+            if (!df->startDetached(urlString)) {
+                // Calling XdgDesktopFile::startDetached() with the user supplied url
+                // It's up to startDetached to choose the format of the urlString
+                // See https://github.com/lxqt/qtxdg-tools/issues/18
                 std::cerr << qPrintable(
                         u"Error while running the default application (%1) for %2\n"_s.arg(df->name(), urlString));
                 success = false;
